@@ -7,7 +7,7 @@ local sql_result_buffer = nil
 local sql_result_window = nil
 local sql_last_position = nil
 
-local function display_result_in_floating_window(result, ismarkdown, database, sql_query, buff)
+local function display_result_in_floating_window(result, ismarkdown, database, sql_query)
 	-- Split the result into lines to display
 	local lines = vim.split(result, "\n")
 
@@ -64,7 +64,13 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 		-- Add the SQL fenced code block
 		table.insert(formatted_lines, "")
 		table.insert(formatted_lines, "```mysql")
-		table.insert(formatted_lines, sql_query)
+		local sql_lines = vim.split(sql_query, "\n")
+		if type(sql_lines) == "string" then
+			sql_lines = { sql_lines }
+		end
+		for _, line in ipairs(sql_lines) do
+			table.insert(formatted_lines, line)
+		end
 		table.insert(formatted_lines, "```")
 		table.insert(formatted_lines, "")
 		-- Add the formatted table
