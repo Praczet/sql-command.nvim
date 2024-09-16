@@ -64,6 +64,7 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 		-- Add the SQL fenced code block
 		table.insert(formatted_lines, "")
 		table.insert(formatted_lines, "```mysql")
+		table.insert(formatted_lines, "")
 		local sql_lines = vim.split(sql_query, "\n")
 		if type(sql_lines) == "string" then
 			sql_lines = { sql_lines }
@@ -71,6 +72,7 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 		for _, line in ipairs(sql_lines) do
 			table.insert(formatted_lines, line)
 		end
+		table.insert(formatted_lines, "")
 		table.insert(formatted_lines, "```")
 		table.insert(formatted_lines, "")
 		-- Add the formatted table
