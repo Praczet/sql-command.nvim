@@ -7,7 +7,7 @@ local sql_result_buffer = nil
 local sql_result_window = nil
 local sql_last_position = nil
 
-local function display_result_in_floating_window(result, ismarkdown, database, sql_query)
+local function display_result_in_floating_window(result, database, sql_query)
 	-- Split the result into lines to display
 	local lines = vim.split(result, "\n")
 
@@ -57,32 +57,25 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 	-- Format the table content
 	local formatted_lines = {}
 
-	-- If rendering as markdown, include the markdown separator
-	if ismarkdown then
-		-- Add the markdown header
-		table.insert(formatted_lines, "# Result from database: " .. database)
-		-- Add the SQL fenced code block
-		table.insert(formatted_lines, "")
-		table.insert(formatted_lines, "```mysql")
-		table.insert(formatted_lines, "")
-		local sql_lines = vim.split(sql_query, "\n")
-		if type(sql_lines) == "string" then
-			sql_lines = { sql_lines }
-		end
-		for _, line in ipairs(sql_lines) do
-			table.insert(formatted_lines, line)
-		end
-		table.insert(formatted_lines, "")
-		table.insert(formatted_lines, "```")
-		table.insert(formatted_lines, "")
-		-- Add the formatted table
-		table.insert(formatted_lines, formatted_header)
-		table.insert(formatted_lines, markdown_separator)
-	else
-		table.insert(formatted_lines, separator)
-		table.insert(formatted_lines, formatted_header)
-		table.insert(formatted_lines, separator)
+	-- Add the markdown header
+	table.insert(formatted_lines, "# Result from database: " .. database)
+	-- Add the SQL fenced code block
+	table.insert(formatted_lines, "")
+	table.insert(formatted_lines, "```mysql")
+	table.insert(formatted_lines, "")
+	local sql_lines = vim.split(sql_query, "\n")
+	if type(sql_lines) == "string" then
+		sql_lines = { sql_lines }
 	end
+	for _, line in ipairs(sql_lines) do
+		table.insert(formatted_lines, line)
+	end
+	table.insert(formatted_lines, "")
+	table.insert(formatted_lines, "```")
+	table.insert(formatted_lines, "")
+	-- Add the formatted table
+	table.insert(formatted_lines, formatted_header)
+	table.insert(formatted_lines, markdown_separator)
 
 	-- Format the content rows
 	for i = 2, #lines do
@@ -95,11 +88,6 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 			end
 			table.insert(formatted_lines, formatted_row)
 		end
-	end
-
-	-- Add final separator for non-markdown tables
-	if not ismarkdown then
-		table.insert(formatted_lines, separator)
 	end
 
 	-- Create a new empty buffer for the table
@@ -137,12 +125,124 @@ local function display_result_in_floating_window(result, ismarkdown, database, s
 	vim.api.nvim_buf_set_lines(sql_result_buffer, 0, -1, false, formatted_lines)
 
 	-- Set the buffer filetype to markdown if `ismarkdown` is true
-	if ismarkdown then
-		vim.bo[sql_result_buffer].filetype = "markdown"
-	end
+	vim.bo[sql_result_buffer].filetype = "markdown"
 	vim.wo[sql_result_window].wrap = false
 	if sql_last_position then
 		vim.fn.setpos(".", sql_last_position)
+	end
+end
+
+local function wrap_blockquote_in_buffer(buffer)
+	local line_count = vim.api.nvim_buf_line_count(buffer)
+	local in_blockquote = false
+	local start_line, end_line = 0, 0
+
+	for i = 1, line_count do
+		local line = vim.api.nvim_buf_get_lines(buffer, i - 1, i, false)[1]
+
+		-- Detect the start of the blockquote
+		if line:match("^>") and not in_blockquote then
+			start_line = i
+			in_blockquote = true
+		elseif not line:match("^>") and in_blockquote then
+			-- Detect the end of the blockquote
+			end_line = i - 1
+			break
+		end
+	end
+
+	if start_line > 0 and end_line == 0 then
+		end_line = line_count
+	end
+
+	if start_line > 0 then
+		-- Apply wrapping only to the blockquote lines in the buffer
+		vim.api.nvim_buf_call(buffer, function()
+			vim.cmd(start_line .. "," .. end_line .. "normal gww")
+		end)
+	else
+		vim.notify("No blockquote found in buffer", vim.log.levels.INFO)
+	end
+end
+
+local function display_message_in_floating_window(message, database, sql_query, message_type)
+	-- Split the result into lines to display
+	local lines = vim.split(message, "\n")
+	message_type = message_type:upper() or "INFO"
+
+	-- Format the table content
+	local formatted_lines = {}
+
+	-- If rendering as markdown, include the markdown separator
+	-- Add the markdown header
+	table.insert(formatted_lines, "# Result from database: " .. database)
+	-- Add the SQL fenced code block
+	table.insert(formatted_lines, "")
+	table.insert(formatted_lines, "```mysql")
+	table.insert(formatted_lines, "")
+	local sql_lines = vim.split(sql_query, "\n")
+	if type(sql_lines) == "string" then
+		sql_lines = { sql_lines }
+	end
+	for _, line in ipairs(sql_lines) do
+		table.insert(formatted_lines, line)
+	end
+	table.insert(formatted_lines, "")
+	table.insert(formatted_lines, "```")
+	table.insert(formatted_lines, "")
+	-- Add the formatted table
+	table.insert(formatted_lines, "> [!" .. message_type .. "]")
+	table.insert(formatted_lines, "> ")
+	for _, line in ipairs(lines) do
+		if string.match(line, "^%-+$") then
+			table.insert(formatted_lines, "> ```")
+		else
+			table.insert(formatted_lines, "> " .. line)
+		end
+	end
+
+	-- Create a new empty buffer for the table
+
+	if sql_result_buffer and vim.api.nvim_buf_is_valid(sql_result_buffer) then
+		sql_last_position = vim.fn.getpos(".")
+		vim.api.nvim_buf_delete(sql_result_buffer, { force = true })
+	end
+
+	sql_result_buffer = vim.api.nvim_create_buf(false, true)
+
+	local win_width = math.floor(vim.o.columns * 0.9)
+	local win_height = math.floor(vim.o.lines * 0.9)
+
+	if sql_result_window and vim.api.nvim_win_is_valid(sql_result_window) then
+		-- If the window is already open, close it first
+		vim.api.nvim_win_close(sql_result_window, true)
+	end
+	-- Create a floating window to display the table
+	sql_result_window = vim.api.nvim_open_win(sql_result_buffer, true, {
+		relative = "editor",
+		width = win_width,
+		height = win_height,
+		col = math.floor((vim.o.columns - win_width) / 2),
+		row = math.floor((vim.o.lines - win_height) / 2),
+		style = "minimal",
+		border = "rounded",
+	})
+
+	-- Keybindings to close the floating window with 'q' or 'Esc'
+	vim.api.nvim_buf_set_keymap(sql_result_buffer, "n", "q", "<Cmd>bd!<CR>", { noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(sql_result_buffer, "n", "<Esc>", "<Cmd>bd!<CR>", { noremap = true, silent = true })
+
+	-- Set the lines of the buffer to the formatted table
+	vim.api.nvim_buf_set_lines(sql_result_buffer, 0, -1, false, formatted_lines)
+
+	-- Set the buffer filetype to markdown if `ismarkdown` is true
+	vim.bo[sql_result_buffer].filetype = "markdown"
+	vim.wo[sql_result_window].wrap = false
+	wrap_blockquote_in_buffer(sql_result_buffer)
+	if sql_last_position then
+		vim.fn.setpos(".", sql_last_position)
+	else
+		vim.fn.setpos(".", { sql_result_buffer, 5, 1 })
 	end
 end
 
@@ -211,9 +311,13 @@ local function sql_command(database, opts)
 	local result = vim.fn.system("mariadb " .. database, selected_text)
 
 	if vim.v.shell_error == 0 then
-		display_result_in_floating_window(result, true, database, selected_text)
+		if not result or result == "" then
+			display_message_in_floating_window("SQL returned no results (0 rows?)", database, selected_text, "INFO")
+		else
+			display_result_in_floating_window(result, database, selected_text)
+		end
 	else
-		vim.notify("Error running SQL command: " .. result, vim.log.levels.ERROR)
+		display_message_in_floating_window(result, database, selected_text, "DANGER")
 	end
 end
 
