@@ -7,6 +7,58 @@ local sql_result_buffer = nil
 local sql_result_window = nil
 local sql_last_position = nil
 
+-- Function to check if the cursor is inside a fenced code block
+local function is_cursor_in_fenced_code_block()
+	local current_line = vim.fn.line(".")
+	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+	local in_code_block = false
+
+	for i = 1, current_line do
+		local line = lines[i - 1]
+		if line:match("^```") then
+			in_code_block = not in_code_block
+		end
+	end
+
+	return in_code_block
+end
+
+-- Function to map <C-Enter> in Normal and Visual modes
+local function setup_ctrl_enter_mapping()
+	-- Autocommand to restrict <C-Enter> to specific filetypes
+	vim.api.nvim_create_autocmd("FileType", {
+		pattern = { "mysql", "mariadb", "sql" },
+		callback = function()
+			-- Map <C-Enter> only for these filetypes
+			vim.api.nvim_buf_set_keymap(0, "n", "<C-CR>", ":SQL<CR>", { noremap = true, silent = true })
+			vim.api.nvim_buf_set_keymap(0, "v", "<C-CR>", ":SQL<CR>", { noremap = true, silent = true })
+		end,
+	})
+
+	-- Special handling for markdown buffers
+	vim.api.nvim_create_autocmd("FileType", {
+		pattern = "markdown",
+		callback = function()
+			-- Map <C-Enter> only if the cursor is inside a fenced code block
+			vim.api.nvim_buf_set_keymap(0, "n", "<C-CR>", function()
+				if is_cursor_in_fenced_code_block() then
+					vim.cmd("SQL")
+				else
+					vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
+				end
+			end, { noremap = true, silent = true })
+
+			vim.api.nvim_buf_set_keymap(0, "v", "<C-CR>", function()
+				if is_cursor_in_fenced_code_block() then
+					vim.cmd("SQL")
+				else
+					vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
+				end
+			end, { noremap = true, silent = true })
+		end,
+	})
+end
+
 local function display_result_in_floating_window(result, database, sql_query)
 	-- Split the result into lines to display
 	local lines = vim.split(result, "\n")
@@ -331,6 +383,7 @@ end
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 	add_sql_command()
+	setup_ctrl_enter_mapping() -- Add the new mappings
 end
 
 return M
