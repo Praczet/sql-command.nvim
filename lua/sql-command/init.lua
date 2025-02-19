@@ -7,20 +7,63 @@ local sql_result_buffer = nil
 local sql_result_window = nil
 local sql_last_position = nil
 
--- Function to check if the cursor is inside a fenced code block
-local function is_cursor_in_fenced_code_block()
-	local current_line = vim.fn.line(".")
+-- Function to check if the cursor is inside a fenced code block AND it's of type sql, mysql, or mariadb
+local function get_cursor_sql_fenced_code_block_type()
+	local current_line_nr = vim.fn.line(".")
 	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 	local in_code_block = false
+	local code_block_type = nil
 
-	for i = 1, current_line do
-		local line = lines[i - 1]
-		if line:match("^```") then
-			in_code_block = not in_code_block
+	for i, line in ipairs(lines) do
+		if line:match("^```(.*)") then
+			local fence_lang = line:match("^```(%w*)") -- Extract language identifier
+			if not in_code_block then
+				-- Entering a code block
+				in_code_block = true
+				if i <= current_line_nr then -- Only consider if the fence is on or before the cursor line
+					if fence_lang == "mysql" or fence_lang == "mariadb" or fence_lang == "sql" then
+						code_block_type = fence_lang
+					else
+						code_block_type = nil -- Not a target SQL type, but still in a code block for other types
+					end
+				end
+			else
+				-- Exiting a code block
+				in_code_block = false
+				if i < current_line_nr and code_block_type then
+					-- If exiting before the cursor and it was a target SQL type, it's still active until here.
+					code_block_type = fence_lang -- Resetting to potentially detect a new block later in the loop, even though we will return earlier.
+				else
+					code_block_type = nil -- Exiting, reset type
+				end
+			end
+
+			if i == current_line_nr then
+				-- If current line is a fence, we are NOT inside a code block for execution purposes (cursor is on the fence itself)
+				in_code_block = false
+				code_block_type = nil
+			elseif i > current_line_nr and in_code_block and code_block_type then
+				-- If we are past the cursor line, but were in a SQL code block, then the cursor IS in the relevant block from a previous opening fence.
+				return code_block_type
+			end
+		end
+		if i == current_line_nr and in_code_block and code_block_type then
+			-- If we reach the cursor line and we are inside a SQL code block, return the type
+			return code_block_type
 		end
 	end
 
-	return in_code_block
+	return nil -- Not in a relevant SQL fenced code block
+end
+
+-- Common callback function for <C-Enter> mapping
+local function ctrl_enter_callback()
+	vim.cmd("SQL")
+end
+
+-- Common callback function for <C-Enter> mapping in markdown
+local function ctrl_enter_markdown_callback()
+	vim.cmd(":lua require('sql-command').exec_if_possible()<CR>")
 end
 
 -- Function to map <C-Enter> in Normal and Visual modes
@@ -30,8 +73,20 @@ local function setup_ctrl_enter_mapping()
 		pattern = { "mysql", "mariadb", "sql" },
 		callback = function()
 			-- Map <C-Enter> only for these filetypes
-			vim.api.nvim_buf_set_keymap(0, "n", "<C-CR>", ":SQL<CR>", { noremap = true, silent = true })
-			vim.api.nvim_buf_set_keymap(0, "v", "<C-CR>", ":SQL<CR>", { noremap = true, silent = true })
+			vim.api.nvim_buf_set_keymap(
+				0,
+				"n",
+				"<C-CR>",
+				":SQL<CR>",
+				{ noremap = true, silent = true, callback = ctrl_enter_callback }
+			)
+			vim.api.nvim_buf_set_keymap(
+				0,
+				"v",
+				"<C-CR>",
+				":SQL<CR>",
+				{ noremap = true, silent = true, callback = ctrl_enter_callback }
+			)
 		end,
 	})
 
@@ -44,7 +99,7 @@ local function setup_ctrl_enter_mapping()
 				"n",
 				"<C-CR>",
 				":lua require('sql-command').exec_if_possible()<CR>",
-				{ noremap = true, silent = true }
+				{ noremap = true, silent = true, callback = ctrl_enter_markdown_callback }
 			)
 
 			vim.api.nvim_buf_set_keymap(
@@ -52,17 +107,18 @@ local function setup_ctrl_enter_mapping()
 				"v",
 				"<C-CR>",
 				":lua require('sql-command').exec_if_possible()<CR>",
-				{ noremap = true, silent = true }
+				{ noremap = true, silent = true, callback = ctrl_enter_markdown_callback }
 			)
 		end,
 	})
 end
 
 function M.exec_if_possible()
-	if is_cursor_in_fenced_code_block() then
+	local block_type = get_cursor_sql_fenced_code_block_type()
+	if block_type then
 		vim.cmd("SQL")
 	else
-		vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
+		vim.notify("Cursor is not inside a mysql, mariadb, or sql fenced code block!", vim.log.levels.WARN)
 	end
 end
 
