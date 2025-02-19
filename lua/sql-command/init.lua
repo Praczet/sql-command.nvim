@@ -39,24 +39,31 @@ local function setup_ctrl_enter_mapping()
 	vim.api.nvim_create_autocmd("FileType", {
 		pattern = "markdown",
 		callback = function()
-			-- Map <C-Enter> only if the cursor is inside a fenced code block
-			vim.api.nvim_buf_set_keymap(0, "n", "<C-CR>", function()
-				if is_cursor_in_fenced_code_block() then
-					vim.cmd("SQL")
-				else
-					vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
-				end
-			end, { noremap = true, silent = true })
+			vim.api.nvim_buf_set_keymap(
+				0,
+				"n",
+				"<C-CR>",
+				":lua require('sql-command').exec_if_possible()<CR>",
+				{ noremap = true, silent = true }
+			)
 
-			vim.api.nvim_buf_set_keymap(0, "v", "<C-CR>", function()
-				if is_cursor_in_fenced_code_block() then
-					vim.cmd("SQL")
-				else
-					vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
-				end
-			end, { noremap = true, silent = true })
+			vim.api.nvim_buf_set_keymap(
+				0,
+				"v",
+				"<C-CR>",
+				":lua require('sql-command').exec_if_possible()<CR>",
+				{ noremap = true, silent = true }
+			)
 		end,
 	})
+end
+
+function M.exec_if_possible()
+	if is_cursor_in_fenced_code_block() then
+		vim.cmd("SQL")
+	else
+		vim.notify("Cursor is not inside a fenced code block!", vim.log.levels.WARN)
+	end
 end
 
 local function display_result_in_floating_window(result, database, sql_query)
