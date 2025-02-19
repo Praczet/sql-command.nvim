@@ -63,7 +63,7 @@ end
 
 -- Common callback function for <C-Enter> mapping in markdown
 local function ctrl_enter_markdown_callback()
-	vim.cmd(":lua require('sql-command').exec_if_possible()<CR>")
+	vim.cmd("lua require('sql-command').exec_if_possible()")
 end
 
 -- Function to map <C-Enter> in Normal and Visual modes
